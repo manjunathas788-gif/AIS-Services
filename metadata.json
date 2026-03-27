@@ -1,0 +1,5 @@
+{
+  "name": "AIS Solutions",
+  "description": "Digital financial and registration services for Indian customers. Bank Reports, UDYAM, PAN, GST, and more.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}

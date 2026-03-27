@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string
+    //   - role: string (required, enum: ["customer", "processing_unit", "admin"])
+    //   - createdAt: string (required, date-time)
+    //
+    // Collection: applications
+    // Document ID: applicationId
+    // Fields:
+    //   - id: string
+    //   - userId: string (required)
+    //   - serviceId: string (required)
+    //   - status: string (required, enum: ["pending", "processing", "completed", "rejected"])
+    //   - data: map
+    //   - documents: list
+    //   - assignedTo: string
+    //   - remarks: string
+    //   - outputUrl: string
+    //   - createdAt: string (required, date-time)
+    //   - updatedAt: string (required, date-time)
+    //
+    // Collection: payments
+    // Document ID: paymentId
+    // Fields:
+    //   - id: string
+    //   - applicationId: string (required)
+    //   - userId: string (required)
+    //   - amount: number (required)
+    //   - status: string (required, enum: ["pending", "success", "failed"])
+    //   - razorpayOrderId: string
+    //   - createdAt: string (required, date-time)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "manjunathas788@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isProcessingUnit() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'processing_unit';
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['customer', 'processing_unit', 'admin'] &&
+             data.createdAt is string;
+    }
+
+    function isValidApplication(data) {
+      return data.keys().hasAll(['userId', 'serviceId', 'status', 'createdAt']) &&
+             data.userId is string &&
+             data.serviceId is string &&
+             data.status in ['pending', 'processing', 'completed', 'rejected'] &&
+             data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (isOwner(uid) || isAdmin());
+      allow create: if isAuthenticated() && (isOwner(uid) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == 'customer' || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(uid) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /applications/{applicationId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isProcessingUnit() || isAdmin());
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId) && isValidApplication(request.resource.data);
+      allow update: if isAuthenticated() && (isOwner(resource.data.userId) || isProcessingUnit() || isAdmin()) && isValidApplication(request.resource.data);
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAdmin();
+    }
+  }
+}
